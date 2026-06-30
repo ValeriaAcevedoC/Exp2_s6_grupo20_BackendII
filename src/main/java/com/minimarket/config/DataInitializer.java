@@ -30,7 +30,7 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
-        Rol adminRole = rolRepository.findByNombre("ROLE_ADMIN")
+        Rol adminRole = rolRepository.findByNombre("ROLE_ADMINISTRADOR")
                 .orElseGet(() -> {
                     Rol rol = new Rol();
                     rol.setNombre("ROLE_ADMINISTRADOR");
