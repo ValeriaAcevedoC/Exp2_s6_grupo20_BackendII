@@ -7,13 +7,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 @RestController
 @RequestMapping("/api/usuarios")
+@Tag(
+    name = "Usuarios",
+    description = "Endpoints para la gestión de usuarios del sistema Minimarket Plus"
+)
 public class UsuarioController {
 
     @Autowired
@@ -23,17 +32,39 @@ public class UsuarioController {
     private PasswordEncoder passwordEncoder;
 
     @GetMapping
-    public List<UsuarioDto> listarUsuarios() {
-        return usuarioService.findAll().stream()
-                .map(this::toUsuarioDto)
+    public CollectionModel<EntityModel<UsuarioDto>> listarUsuarios() {
+        List<EntityModel<UsuarioDto>> usuarios = usuarioService.findAll().stream()
+                .map(usuario -> {
+                UsuarioDto dto = toUsuarioDto(usuario);
+
+                    return EntityModel.of(dto,
+                        linkTo(methodOn(UsuarioController.class).obtenerUsuarioPorId(usuario.getId())).withSelfRel(),
+                        linkTo(methodOn(UsuarioController.class).listarUsuarios()).withRel("usuarios")
+                    );
+                })
                 .collect(Collectors.toList());
+
+        return CollectionModel.of(usuarios,
+            linkTo(methodOn(UsuarioController.class).listarUsuarios()).withSelfRel()
+        );
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Usuario> obtenerUsuarioPorId(@PathVariable Long id) {
-        Optional<Usuario> usuario = usuarioService.findById(id);
-        return usuario.map(ResponseEntity::ok) // Si el usuario existe, devuelve 200 OK con el usuario
-            .orElseGet(() -> ResponseEntity.notFound().build()); // Si no, devuelve 404
+    public ResponseEntity<EntityModel<UsuarioDto>> obtenerUsuarioPorId(@PathVariable Long id) {
+    Optional<Usuario> usuario = usuarioService.findById(id);
+
+        if (usuario.isPresent()) {
+            UsuarioDto dto = toUsuarioDto(usuario.get());
+
+            EntityModel<UsuarioDto> usuarioModel = EntityModel.of(dto,
+                linkTo(methodOn(UsuarioController.class).obtenerUsuarioPorId(id)).withSelfRel(),
+                linkTo(methodOn(UsuarioController.class).listarUsuarios()).withRel("usuarios")
+            );
+
+            return ResponseEntity.ok(usuarioModel);
+        }
+
+        return ResponseEntity.notFound().build();
     }
 
     @PostMapping

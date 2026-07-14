@@ -37,11 +37,18 @@ public class SecurityConfig {
                         .requestMatchers("/auth/login").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/public/**").permitAll()
-                        .requestMatchers("/api/usuarios/**").hasAuthority("ROLE_ADMINISTRADOR")
 
+                        // Swagger / OpenAPI
+                        .requestMatchers("/swagger-ui/**").permitAll()
+                        .requestMatchers("/swagger-ui.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+
+                        .requestMatchers("/api/usuarios").hasAuthority("ROLE_ADMINISTRADOR")
+                        .requestMatchers("/api/usuarios/**").hasAuthority("ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/productos/**").hasAnyAuthority("ROLE_CLIENTE", "ROLE_EMPLEADO", "ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/inventario/**").hasAnyAuthority("ROLE_EMPLEADO", "ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/ventas/**").hasAnyAuthority("ROLE_EMPLEADO", "ROLE_ADMINISTRADOR")
+                        .requestMatchers("/api/categorias").hasAnyAuthority("ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/categorias/**").hasAnyAuthority("ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/carrito/**").hasAnyAuthority("ROLE_EMPLEADO", "ROLE_CLIENTE", "ROLE_ADMINISTRADOR")
                         .requestMatchers("/api/detalle-ventas/**").hasAnyAuthority("ROLE_EMPLEADO", "ROLE_ADMINISTRADOR")

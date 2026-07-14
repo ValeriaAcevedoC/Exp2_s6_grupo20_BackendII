@@ -2,6 +2,7 @@ package com.minimarket.entity;
 
 import jakarta.persistence.*;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 public class Categoria {
@@ -13,6 +14,7 @@ public class Categoria {
     private String nombre;
 
     @OneToMany(mappedBy = "categoria", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
     private List<Producto> productos;
 
     // Getters y Setters

@@ -1,25 +1,46 @@
 package com.minimarket.entity;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 
 @Entity
+@Schema(description = "Representa un producto agregado al carrito de compras de un usuario.")
 public class Carrito {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(
+            description = "Identificador único del registro del carrito.",
+            example = "1",
+            accessMode = Schema.AccessMode.READ_ONLY
+    )
     private Long id;
 
     @ManyToOne
     @JoinColumn(name = "usuario_id", nullable = false)
+    @Schema(
+            description = "Usuario propietario del carrito.",
+            implementation = Usuario.class
+    )
     private Usuario usuario;
 
     @ManyToOne
     @JoinColumn(name = "producto_id", nullable = false)
+    @Schema(
+            description = "Producto agregado al carrito.",
+            implementation = Producto.class
+    )
     private Producto producto;
 
     @Column(nullable = false)
+    @Schema(
+            description = "Cantidad de unidades del producto agregadas al carrito.",
+            example = "2"
+    )
     private Integer cantidad;
 
     // Getters y Setters
+
     public Long getId() {
         return id;
     }
