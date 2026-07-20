@@ -1,9 +1,14 @@
 package com.minimarket.controller;
 
 import com.minimarket.entity.Carrito;
+import com.minimarket.exception.ResourceNotFoundException;
+import com.minimarket.hateoas.CarritoModelAssembler;
 import com.minimarket.service.CarritoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -13,10 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.hateoas.CollectionModel;
 import org.springframework.hateoas.EntityModel;
 
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
-
-import java.util.List;
+import java.net.URI;
 
 @RestController
 @RequestMapping("/api/carrito")
@@ -25,6 +27,9 @@ public class CarritoController {
 
     @Autowired
     private CarritoService carritoService;
+
+    @Autowired
+    private CarritoModelAssembler carritoModelAssembler;
 
     @GetMapping
     @Operation(
@@ -36,17 +41,8 @@ public class CarritoController {
             @ApiResponse(responseCode = "500", description = "Error interno del servidor")
     })
     public CollectionModel<EntityModel<Carrito>> listarCarrito() {
-    List<EntityModel<Carrito>> carritos = carritoService.findAll().stream()
-            .map(carrito -> EntityModel.of(carrito,
-                    linkTo(methodOn(CarritoController.class).obtenerCarritoPorId(carrito.getId())).withSelfRel(),
-                    linkTo(methodOn(CarritoController.class).listarCarrito()).withRel("carrito")
-            ))
-            .toList();
-
-            return CollectionModel.of(carritos,
-            linkTo(methodOn(CarritoController.class).listarCarrito()).withSelfRel()
-             );
-        }
+        return carritoModelAssembler.toCollectionModel(carritoService.findAll());
+    }
 
     @GetMapping("/{id}")
     @Operation(
@@ -65,15 +61,10 @@ public class CarritoController {
     Carrito carrito = carritoService.findById(id);
 
     if (carrito != null) {
-        EntityModel<Carrito> carritoModel = EntityModel.of(carrito,
-                linkTo(methodOn(CarritoController.class).obtenerCarritoPorId(id)).withSelfRel(),
-                linkTo(methodOn(CarritoController.class).listarCarrito()).withRel("carrito")
-        );
-
-        return ResponseEntity.ok(carritoModel);
+        return ResponseEntity.ok(carritoModelAssembler.toModel(carrito));
     }
 
-    return ResponseEntity.notFound().build();
+    throw new ResourceNotFoundException("Registro del carrito no encontrado con id: " + id);
     }
 
     @PostMapping
@@ -82,17 +73,39 @@ public class CarritoController {
             description = "Registra un producto dentro del carrito de compras, indicando la información asociada al producto y la cantidad solicitada."
     )
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Producto agregado al carrito correctamente"),
+            @ApiResponse(responseCode = "201", description = "Producto agregado al carrito correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos en la solicitud"),
             @ApiResponse(responseCode = "500", description = "Error interno del servidor")
     })
-    public Carrito agregarProductoAlCarrito(
+    public ResponseEntity<Carrito> agregarProductoAlCarrito(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Datos del producto o registro que se desea agregar al carrito"
+                    description = "Datos del producto o registro que se desea agregar al carrito",
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = Carrito.class),
+                            examples = @ExampleObject(
+                                    name = "Item de carrito valido",
+                                    value = """
+                                            {
+                                              "usuario": {
+                                                "id": 1
+                                              },
+                                              "producto": {
+                                                "id": 1
+                                              },
+                                              "cantidad": 2
+                                            }
+                                            """
+                            )
+                    )
             )
             @org.springframework.web.bind.annotation.RequestBody Carrito carrito) {
 
-        return carritoService.save(carrito);
+        Carrito carritoCreado = carritoService.save(carrito);
+        URI location = carritoModelAssembler.toSelfUri(carritoCreado);
+
+        return ResponseEntity.created(location).body(carritoCreado);
     }
 
     @PutMapping("/{id}")
@@ -111,7 +124,26 @@ public class CarritoController {
             @PathVariable Long id,
 
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Datos actualizados del registro del carrito"
+                    description = "Datos actualizados del registro del carrito",
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = Carrito.class),
+                            examples = @ExampleObject(
+                                    name = "Item de carrito actualizado",
+                                    value = """
+                                            {
+                                              "usuario": {
+                                                "id": 1
+                                              },
+                                              "producto": {
+                                                "id": 1
+                                              },
+                                              "cantidad": 4
+                                            }
+                                            """
+                            )
+                    )
             )
             @org.springframework.web.bind.annotation.RequestBody Carrito carrito) {
 
@@ -122,7 +154,7 @@ public class CarritoController {
             return ResponseEntity.ok(carritoService.save(carrito));
         }
 
-        return ResponseEntity.notFound().build();
+        throw new ResourceNotFoundException("Registro del carrito no encontrado con id: " + id);
     }
 
     @DeleteMapping("/{id}")
@@ -146,6 +178,6 @@ public class CarritoController {
             return ResponseEntity.noContent().build();
         }
 
-        return ResponseEntity.notFound().build();
+        throw new ResourceNotFoundException("Registro del carrito no encontrado con id: " + id);
     }
 }

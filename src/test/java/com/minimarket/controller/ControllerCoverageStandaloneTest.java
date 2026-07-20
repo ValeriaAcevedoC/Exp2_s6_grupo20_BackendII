@@ -2,6 +2,11 @@ package com.minimarket.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.minimarket.entity.*;
+import com.minimarket.exception.GlobalExceptionHandler;
+import com.minimarket.hateoas.CarritoModelAssembler;
+import com.minimarket.hateoas.InventarioModelAssembler;
+import com.minimarket.hateoas.ProductoModelAssembler;
+import com.minimarket.hateoas.UsuarioModelAssembler;
 import com.minimarket.repository.RolRepository;
 import com.minimarket.security.model.LoginRequest;
 import com.minimarket.security.util.JwtUtil;
@@ -11,9 +16,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,6 +56,11 @@ class ControllerCoverageStandaloneTest {
     @Mock private VentaService ventaService;
     @Mock private RolRepository rolRepository;
 
+    @Spy private ProductoModelAssembler productoModelAssembler = new ProductoModelAssembler();
+    @Spy private UsuarioModelAssembler usuarioModelAssembler = new UsuarioModelAssembler();
+    @Spy private CarritoModelAssembler carritoModelAssembler = new CarritoModelAssembler();
+    @Spy private InventarioModelAssembler inventarioModelAssembler = new InventarioModelAssembler();
+
     @InjectMocks private AuthController authController;
     @InjectMocks private ProductoController productoController;
     @InjectMocks private UsuarioController usuarioController;
@@ -75,7 +87,7 @@ class ControllerCoverageStandaloneTest {
                 ventaController,
                 rolController,
                 holaMundoController
-        ).setValidator(validator).build();
+        ).setControllerAdvice(new GlobalExceptionHandler()).setValidator(validator).build();
     }
 
     @Test
@@ -95,6 +107,57 @@ class ControllerCoverageStandaloneTest {
     }
 
     @Test
+    void authLogin_conDatosInvalidos_debeRetornarErrorNormalizado() throws Exception {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("");
+        request.setPassword("");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.path").value("/auth/login"));
+    }
+
+    @Test
+    void authLogin_conJsonInvalido_debeRetornarErrorNormalizado() throws Exception {
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("El cuerpo de la solicitud no es valido."));
+    }
+
+    @Test
+    void authLogin_conCredencialesInvalidas_debeRetornarUnauthorizedNormalizado() throws Exception {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("admin");
+        request.setPassword("password123");
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("Bad credentials"));
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Credenciales invalidas."));
+    }
+
+    @Test
+    void errorInesperado_debeRetornarErrorNormalizado() throws Exception {
+        when(ventaService.findAll()).thenThrow(new RuntimeException("Falla inesperada"));
+
+        mockMvc.perform(get("/api/ventas"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.message").value("Error interno del servidor."))
+                .andExpect(jsonPath("$.path").value("/api/ventas"));
+    }
+
+    @Test
     void productoEndpoints_debenCubrirCrud() throws Exception {
         Producto producto = new Producto();
         producto.setId(1L);
@@ -104,10 +167,19 @@ class ControllerCoverageStandaloneTest {
         when(productoService.findById(99L)).thenReturn(null);
         when(productoService.save(any(Producto.class))).thenReturn(producto);
 
-        mockMvc.perform(get("/api/productos")).andExpect(status().isOk()).andExpect(jsonPath("$[0].nombre").value("Pan"));
+        mockMvc.perform(get("/api/productos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].nombre").value("Pan"))
+                .andExpect(jsonPath("$.content[0].links").isArray())
+                .andExpect(jsonPath("$.links").isArray());
         mockMvc.perform(get("/api/productos/1")).andExpect(status().isOk()).andExpect(jsonPath("$.nombre").value("Pan"));
-        mockMvc.perform(get("/api/productos/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/productos").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(producto))).andExpect(status().isOk()).andExpect(jsonPath("$.id").value(1));
+        mockMvc.perform(get("/api/productos/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message").value("Producto no encontrado con id: 99"))
+                .andExpect(jsonPath("$.path").value("/api/productos/99"));
+        mockMvc.perform(post("/api/productos").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(producto))).andExpect(status().isCreated()).andExpect(header().exists("Location")).andExpect(jsonPath("$.id").value(1));
         mockMvc.perform(put("/api/productos/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(producto))).andExpect(status().isOk());
         mockMvc.perform(put("/api/productos/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(producto))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/productos/1")).andExpect(status().isNoContent());
@@ -129,10 +201,17 @@ class ControllerCoverageStandaloneTest {
         when(usuarioService.save(any(Usuario.class))).thenReturn(usuario);
         when(passwordEncoder.encode(any())).thenReturn("encoded");
 
-        mockMvc.perform(get("/api/usuarios")).andExpect(status().isOk()).andExpect(jsonPath("$[0].username").value("admin"));
+        mockMvc.perform(get("/api/usuarios"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].username").value("admin"))
+                .andExpect(jsonPath("$.content[0].links").isArray())
+                .andExpect(jsonPath("$.links").isArray());
         mockMvc.perform(get("/api/usuarios/1")).andExpect(status().isOk()).andExpect(jsonPath("$.username").value("admin"));
-        mockMvc.perform(get("/api/usuarios/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/usuarios").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(usuario))).andExpect(status().isOk()).andExpect(jsonPath("$.username").value("admin"));
+        mockMvc.perform(get("/api/usuarios/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.message").value("Usuario no encontrado con id: 99"));
+        mockMvc.perform(post("/api/usuarios").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(usuario))).andExpect(status().isCreated()).andExpect(header().exists("Location")).andExpect(jsonPath("$.username").value("admin"));
         mockMvc.perform(put("/api/usuarios/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(usuario))).andExpect(status().isOk());
         mockMvc.perform(put("/api/usuarios/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(usuario))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/usuarios/1")).andExpect(status().isNoContent());
@@ -149,8 +228,10 @@ class ControllerCoverageStandaloneTest {
 
         mockMvc.perform(get("/api/usuarios"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].roles").isArray())
-                .andExpect(jsonPath("$[0].roles").isEmpty());
+                .andExpect(jsonPath("$.content[0].roles").isArray())
+                .andExpect(jsonPath("$.content[0].roles").isEmpty())
+                .andExpect(jsonPath("$.content[0].links").isArray())
+                .andExpect(jsonPath("$.links").isArray());
     }
 
     @Test
@@ -162,10 +243,14 @@ class ControllerCoverageStandaloneTest {
         when(carritoService.findById(99L)).thenReturn(null);
         when(carritoService.save(any(Carrito.class))).thenReturn(carrito);
 
-        mockMvc.perform(get("/api/carrito")).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(1));
+        mockMvc.perform(get("/api/carrito"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].links").isArray())
+                .andExpect(jsonPath("$.links").isArray());
         mockMvc.perform(get("/api/carrito/1")).andExpect(status().isOk());
         mockMvc.perform(get("/api/carrito/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/carrito").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(carrito))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/carrito").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(carrito))).andExpect(status().isCreated()).andExpect(header().exists("Location"));
         mockMvc.perform(put("/api/carrito/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(carrito))).andExpect(status().isOk());
         mockMvc.perform(put("/api/carrito/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(carrito))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/carrito/1")).andExpect(status().isNoContent());
@@ -185,7 +270,7 @@ class ControllerCoverageStandaloneTest {
         mockMvc.perform(get("/api/categorias")).andExpect(status().isOk()).andExpect(jsonPath("$[0].nombre").value("Lácteos"));
         mockMvc.perform(get("/api/categorias/1")).andExpect(status().isOk());
         mockMvc.perform(get("/api/categorias/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/categorias").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(categoria))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/categorias").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(categoria))).andExpect(status().isCreated()).andExpect(header().exists("Location"));
         mockMvc.perform(put("/api/categorias/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(categoria))).andExpect(status().isOk());
         mockMvc.perform(put("/api/categorias/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(categoria))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/categorias/1")).andExpect(status().isNoContent());
@@ -205,7 +290,7 @@ class ControllerCoverageStandaloneTest {
         mockMvc.perform(get("/api/detalle-ventas")).andExpect(status().isOk()).andExpect(jsonPath("$[0].cantidad").value(2));
         mockMvc.perform(get("/api/detalle-ventas/1")).andExpect(status().isOk());
         mockMvc.perform(get("/api/detalle-ventas/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/detalle-ventas").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(detalle))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/detalle-ventas").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(detalle))).andExpect(status().isCreated()).andExpect(header().exists("Location"));
         mockMvc.perform(put("/api/detalle-ventas/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(detalle))).andExpect(status().isOk());
         mockMvc.perform(put("/api/detalle-ventas/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(detalle))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/detalle-ventas/1")).andExpect(status().isNoContent());
@@ -222,10 +307,14 @@ class ControllerCoverageStandaloneTest {
         when(inventarioService.findById(99L)).thenReturn(null);
         when(inventarioService.save(any(Inventario.class))).thenReturn(inventario);
 
-        mockMvc.perform(get("/api/inventario")).andExpect(status().isOk()).andExpect(jsonPath("$[0].cantidad").value(10));
+        mockMvc.perform(get("/api/inventario"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].cantidad").value(10))
+                .andExpect(jsonPath("$.content[0].links").isArray())
+                .andExpect(jsonPath("$.links").isArray());
         mockMvc.perform(get("/api/inventario/1")).andExpect(status().isOk());
         mockMvc.perform(get("/api/inventario/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/inventario").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(inventario))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/inventario").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(inventario))).andExpect(status().isCreated()).andExpect(header().exists("Location"));
         mockMvc.perform(put("/api/inventario/1").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(inventario))).andExpect(status().isOk());
         mockMvc.perform(put("/api/inventario/99").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(inventario))).andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/inventario/1")).andExpect(status().isNoContent());
@@ -244,7 +333,7 @@ class ControllerCoverageStandaloneTest {
         mockMvc.perform(get("/api/ventas")).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(1));
         mockMvc.perform(get("/api/ventas/1")).andExpect(status().isOk());
         mockMvc.perform(get("/api/ventas/99")).andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/ventas").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(venta))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/ventas").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(venta))).andExpect(status().isCreated()).andExpect(header().exists("Location"));
     }
 
     @Test
@@ -256,7 +345,7 @@ class ControllerCoverageStandaloneTest {
         when(rolRepository.save(any(Rol.class))).thenReturn(rol);
 
         mockMvc.perform(get("/api/roles")).andExpect(status().isOk()).andExpect(jsonPath("$[0].nombre").value("ADMIN"));
-        mockMvc.perform(post("/api/roles").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(rol))).andExpect(status().isOk()).andExpect(jsonPath("$.nombre").value("ADMIN"));
+        mockMvc.perform(post("/api/roles").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(rol))).andExpect(status().isCreated()).andExpect(header().exists("Location")).andExpect(jsonPath("$.nombre").value("ADMIN"));
     }
 
     @Test

@@ -1,9 +1,14 @@
 package com.minimarket.controller;
 
 import com.minimarket.entity.Producto;
+import com.minimarket.exception.ResourceNotFoundException;
+import com.minimarket.hateoas.ProductoModelAssembler;
 import com.minimarket.service.ProductoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -13,10 +18,7 @@ import org.springframework.hateoas.EntityModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
+import java.net.URI;
 
 @RestController
 @RequestMapping("/api/productos")
@@ -25,6 +27,9 @@ public class ProductoController {
 
     @Autowired
     private ProductoService productoService;
+
+    @Autowired
+    private ProductoModelAssembler productoModelAssembler;
 
     @GetMapping
     @Operation(
@@ -36,16 +41,7 @@ public class ProductoController {
             @ApiResponse(responseCode = "500", description = "Error interno del servidor")
     })
     public CollectionModel<EntityModel<Producto>> listarProductos() {
-        List<EntityModel<Producto>> productos = productoService.findAll().stream()
-                .map(producto -> EntityModel.of(producto,
-                        linkTo(methodOn(ProductoController.class).obtenerProductoPorId(producto.getId())).withSelfRel(),
-                        linkTo(methodOn(ProductoController.class).listarProductos()).withRel("productos")
-                ))
-                .toList();
-
-        return CollectionModel.of(productos,
-                linkTo(methodOn(ProductoController.class).listarProductos()).withSelfRel()
-        );
+        return productoModelAssembler.toCollectionModel(productoService.findAll());
     }
 
     @GetMapping("/{id}")
@@ -65,15 +61,10 @@ public class ProductoController {
         Producto producto = productoService.findById(id);
 
         if (producto != null) {
-            EntityModel<Producto> productoModel = EntityModel.of(producto,
-                    linkTo(methodOn(ProductoController.class).obtenerProductoPorId(id)).withSelfRel(),
-                    linkTo(methodOn(ProductoController.class).listarProductos()).withRel("productos")
-            );
-
-            return ResponseEntity.ok(productoModel);
+            return ResponseEntity.ok(productoModelAssembler.toModel(producto));
         }
 
-        return ResponseEntity.notFound().build();
+        throw new ResourceNotFoundException("Producto no encontrado con id: " + id);
     }
 
     @PostMapping
@@ -82,17 +73,38 @@ public class ProductoController {
             description = "Registra un nuevo producto en el sistema Minimarket Plus."
     )
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Producto creado correctamente"),
+            @ApiResponse(responseCode = "201", description = "Producto creado correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos en la solicitud"),
             @ApiResponse(responseCode = "500", description = "Error interno del servidor")
     })
-    public Producto guardarProducto(
+    public ResponseEntity<Producto> guardarProducto(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Datos del producto que se desea registrar en el sistema"
+                    description = "Datos del producto que se desea registrar en el sistema",
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = Producto.class),
+                            examples = @ExampleObject(
+                                    name = "Producto valido",
+                                    value = """
+                                            {
+                                              "nombre": "Pan integral",
+                                              "precio": 1590.0,
+                                              "stock": 25,
+                                              "categoria": {
+                                                "id": 1
+                                              }
+                                            }
+                                            """
+                            )
+                    )
             )
             @org.springframework.web.bind.annotation.RequestBody Producto producto) {
 
-        return productoService.save(producto);
+        Producto productoCreado = productoService.save(producto);
+        URI location = productoModelAssembler.toSelfUri(productoCreado);
+
+        return ResponseEntity.created(location).body(productoCreado);
     }
 
     @PutMapping("/{id}")
@@ -111,7 +123,25 @@ public class ProductoController {
             @PathVariable Long id,
 
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Datos actualizados del producto"
+                    description = "Datos actualizados del producto",
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = Producto.class),
+                            examples = @ExampleObject(
+                                    name = "Producto actualizado",
+                                    value = """
+                                            {
+                                              "nombre": "Pan integral familiar",
+                                              "precio": 1890.0,
+                                              "stock": 40,
+                                              "categoria": {
+                                                "id": 1
+                                              }
+                                            }
+                                            """
+                            )
+                    )
             )
             @org.springframework.web.bind.annotation.RequestBody Producto producto) {
 
@@ -122,7 +152,7 @@ public class ProductoController {
             return ResponseEntity.ok(productoService.save(producto));
         }
 
-        return ResponseEntity.notFound().build();
+        throw new ResourceNotFoundException("Producto no encontrado con id: " + id);
     }
 
     @DeleteMapping("/{id}")
@@ -146,6 +176,6 @@ public class ProductoController {
             return ResponseEntity.noContent().build();
         }
 
-        return ResponseEntity.notFound().build();
+        throw new ResourceNotFoundException("Producto no encontrado con id: " + id);
     }
 }

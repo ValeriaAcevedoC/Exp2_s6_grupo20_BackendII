@@ -1,6 +1,7 @@
 package com.minimarket.service.impl;
 
 import com.minimarket.entity.Categoria;
+import com.minimarket.entity.Producto;
 import com.minimarket.repository.CategoriaRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -77,5 +78,16 @@ class CategoriaServiceImplTest {
         categoriaService.deleteById(3L);
 
         verify(categoriaRepository).deleteById(3L);
+    }
+
+    @Test
+    void categoria_debePermitirAsignarProductos() {
+        Categoria categoria = new Categoria();
+        Producto producto = new Producto();
+
+        categoria.setProductos(List.of(producto));
+
+        assertEquals(1, categoria.getProductos().size());
+        assertSame(producto, categoria.getProductos().get(0));
     }
 }
